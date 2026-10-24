@@ -2,7 +2,7 @@ spring:
   application:
     name: saga_res_api
   datasource:
-    url: jdbc:postgresql://2k7mc4lfq3k0mjrg.gateway01.us-east-1.prod.aws.pg.tidbcloud.com:5432/sage?sslmode=require
+    url: jdbc:postgresql://2k7mc4lfq3k0mjrg.gateway01.us-east-1.prod.aws.pg.tidbcloud.com:5432/sage?currentSchema=sage_schema&sslmode=require
     username: 2k7mc4lfq3k0mjrg.postgres
     password: moU7dMFdTJ0-pv-Tn3SZM7xc4k--qhCk
     driver-class-name: org.postgresql.Driver
@@ -15,3 +15,4 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+        default_schema: sage_schema
