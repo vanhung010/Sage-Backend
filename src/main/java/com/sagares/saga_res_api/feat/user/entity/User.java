@@ -17,8 +17,6 @@ import java.util.Set;
 @AllArgsConstructor
 @ToString
 public class User extends BaseEntity {
-
-
     @Column(name = "full_name", nullable = false, length = 255)
     String fullName;
 

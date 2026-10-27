@@ -25,8 +25,8 @@ public class OrderItem extends BaseEntity {
     @Column(name = "sub_total", nullable = false)
     private BigDecimal subTotal;
 
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
+
 }

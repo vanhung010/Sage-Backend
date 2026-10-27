@@ -22,3 +22,5 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 1
+    default-schema: sage_schema
+    schemas: sage_schema
