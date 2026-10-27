@@ -1,8 +1,8 @@
 package com.sagares.saga_res_api.feat.order.entity;
 
 import com.sagares.saga_res_api.common.base.BaseEntity;
-import com.sagares.saga_res_api.feat.customer.entity.Customer;
 import com.sagares.saga_res_api.feat.order.Status;
+import com.sagares.saga_res_api.feat.user.entity.User;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -29,7 +29,7 @@ public class Order extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "customer_id", nullable = false)
-    private Customer customer;
+    private User user;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<OrderItem> orderItems = new HashSet<>();
