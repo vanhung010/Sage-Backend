@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -15,8 +16,9 @@ import java.util.Set;
 @Entity
 @Getter
 @Setter
-@ToString
 @NoArgsConstructor
+@AllArgsConstructor
+@SuperBuilder
 public class Category extends BaseEntity {
     @Column(name = "name")
     private String name;
@@ -25,5 +27,6 @@ public class Category extends BaseEntity {
     private String description;
 
     @ManyToMany(mappedBy = "categories")
+    @Builder.Default
     private Set<Menu> menus = new HashSet<>();
 }

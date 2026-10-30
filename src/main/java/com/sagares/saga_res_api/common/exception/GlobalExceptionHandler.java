@@ -23,4 +23,30 @@ public class GlobalExceptionHandler extends RuntimeException {
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
+
+    @ExceptionHandler(ResourceSavedException.class)
+    public ResponseEntity<ErrorResponse> handleSaveFailed(
+            ResourceSavedException ex, HttpServletRequest req
+    ) {
+        ErrorResponse body = new ErrorResponse(
+          HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                ex.getMessage(),
+                req.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(UpdateException.class)
+    public ResponseEntity<ErrorResponse> handleUpdateFailed(
+            UpdateException ex, HttpServletRequest req
+    ) {
+        ErrorResponse body = new ErrorResponse(
+          HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                ex.getMessage(),
+                req.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
 }
