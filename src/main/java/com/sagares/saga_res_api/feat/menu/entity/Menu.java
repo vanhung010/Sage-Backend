@@ -4,9 +4,11 @@ package com.sagares.saga_res_api.feat.menu.entity;
 import com.sagares.saga_res_api.common.base.BaseEntity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -16,6 +18,8 @@ import java.util.Set;
 @Getter
 @Setter
 @NoArgsConstructor
+@AllArgsConstructor
+@SuperBuilder
 public class Menu extends BaseEntity {
     @Column(name = "name", nullable = false)
     @NotBlank
