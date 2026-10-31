@@ -6,7 +6,7 @@ import java.math.BigInteger;
 
 @Builder(toBuilder = true)
 public record MenuDto(
-        BigInteger id,
+        Long id,
         String name,
         String description,
         String imageUrl,
