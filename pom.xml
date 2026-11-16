@@ -116,6 +116,12 @@
 			<artifactId>spring-boot-starter-flyway</artifactId>
 		</dependency>
 
+		<dependency>
+			<groupId>com.cloudinary</groupId>
+			<artifactId>cloudinary-http5</artifactId>
+			<version>2.6.0</version>
+		</dependency>
+
 
 
 	</dependencies>
