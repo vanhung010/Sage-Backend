@@ -1,32 +1,38 @@
 package com.sagares.saga_res_api.feat.menu.entity;
 
+
 import com.sagares.saga_res_api.common.base.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.ManyToMany;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.springframework.data.annotation.LastModifiedDate;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
-
-@Table(name = "categories")
 @Entity
+@Table(name = "categories", schema = "sage")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 @SuperBuilder
+@NoArgsConstructor
 public class Category extends BaseEntity {
-    @Column(name = "name")
+
+    @Column(name = "name", nullable = false)
     private String name;
 
     @Column(name = "description")
     private String description;
 
-    @ManyToMany(mappedBy = "categories")
     @Builder.Default
+    @ManyToMany(mappedBy = "categories")
     private Set<Menu> menus = new HashSet<>();
+
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted;
 }

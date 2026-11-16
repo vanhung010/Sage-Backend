@@ -52,8 +52,17 @@ public class MenuService {
         menuRepository.save(menu);
     }
 
-    public void deleteById(Long id) throws MenuNotFoundException {
-        menuRepository.deleteById(id);
+    @Transactional
+    public void deleteById(Long id) {
+        Menu menu = menuRepository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() ->
+                        new MenuNotFoundException("Không tìm thấy món có ID: " + id)
+                );
+
+        menu.setDeleted(true);
+
+        // Entity đang được quản lý trong transaction.
+        // Hibernate tự ghi UPDATE khi transaction hoàn tất.
     }
 
 }
