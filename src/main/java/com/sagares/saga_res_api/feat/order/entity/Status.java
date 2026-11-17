@@ -9,3 +9,10 @@ public enum Status {
     PREPARING,
     REFUND
 }
+
+
+//ACCEPTED duyệt đơn, đã nhận tiền ( đối với VnPay)
+
+// PENDING -> ACCEPTED -> PREPARING -> DELIVERING -> SUCCESSFUL (VNPay)
+// PENDING -> PREPARING -> DELIVERING -> SUCCESSFUL (Cod)
+// PENDING -> DENIED -> REFUND  (Từ chối vì lí do nào đó)
