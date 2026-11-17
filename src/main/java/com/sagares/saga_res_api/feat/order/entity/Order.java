@@ -52,6 +52,9 @@ public class Order extends BaseEntity {
     @Column(name = "version", nullable = false)
     private Long version;
 
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted;
+
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
