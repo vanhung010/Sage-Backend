@@ -16,3 +16,4 @@ public enum Status {
 // PENDING -> ACCEPTED -> PREPARING -> DELIVERING -> SUCCESSFUL (VNPay)
 // PENDING -> PREPARING -> DELIVERING -> SUCCESSFUL (Cod)
 // PENDING -> DENIED -> REFUND  (Từ chối vì lí do nào đó)
+//ACCEPTED -> DENIED (Hủy đơn)
