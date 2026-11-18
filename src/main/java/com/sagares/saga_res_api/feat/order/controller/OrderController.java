@@ -1,17 +1,16 @@
 package com.sagares.saga_res_api.feat.order.controller;
 
 import com.sagares.saga_res_api.common.dto.PageResponse;
+import com.sagares.saga_res_api.feat.order.dto.StaffOrderDetailResponse;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderResponse;
 import com.sagares.saga_res_api.feat.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RequiredArgsConstructor
 @RestController
@@ -57,5 +56,14 @@ public class OrderController {
         return orderService.getFinishedOrders(cursor, size);
     }
 
+    @Operation(
+            summary = "Lấy chi tiết đơn cho nhân viên",
+            description = "Trả về món, giao hàng, thanh toán, hoàn tiền và các thao tác có thể thực hiện."
+    )
+    @GetMapping("/{orderId}")
+    public StaffOrderDetailResponse getOrderDetail(
+            @PathVariable("orderId") @Positive Long orderId) {
+        return orderService.getOrderDetail(orderId);
+    }
 
 }
