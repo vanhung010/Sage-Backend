@@ -2,6 +2,7 @@ package com.sagares.saga_res_api.feat.order.service;
 
 
 import com.sagares.saga_res_api.common.dto.PageResponse;
+import com.sagares.saga_res_api.common.exception.BusinessException;
 import com.sagares.saga_res_api.common.exception.ResourceNotFoundException;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderAction;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderDetailResponse;
@@ -17,6 +18,7 @@ import com.sagares.saga_res_api.feat.payment.entity.TransactionType;
 import com.sagares.saga_res_api.feat.payment.repository.PaymentTransactionRepository;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -92,6 +94,41 @@ public class OrderService {
                 allowedActions(order.getStatus(), payment, refund));
     }
 
+    //Duyệt đơn VnPay PENDING -> APPROAED (sai chính tả rr)
+    @Transactional
+    public void approveOrder(Long orderId) {
+        Order order = orderRepository.findByIdAndDeletedFalse(orderId).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
+
+        if (order.getStatus() != Status.PENDING) {throw new BusinessException("ORDER_NOT_PENDING", "Đơn hàng không còn chờ duyệt");
+        }
+
+        StaffOrderDetailResponse.Transaction payment = findDetailTransaction(orderId, TransactionType.PAYMENT);
+        //Kiểm tra phương thức thanh toán
+        if (!isSuccessfulVnpayPayment(payment)) {
+            throw new BusinessException(
+                    "ORDER_PAYMENT_NOT_CONFIRMED",
+                    "Chỉ duyệt đơn VNPAY đã xác nhận thu tiền");
+        }
+        //Set trạng thái của đơn đặt món sang đã duyệt
+        order.setStatus(Status.ACCEPTED);
+
+        //orderRepository.flush() yêu cầu Hibernate gửi các thay đổi đang chờ xuống database ngay lúc gọi.
+        //Trong đoạn duyệt đơn, mục đích là để câu UPDATE chạy bên trong khối try, nơi service có thể bắt lỗi xung đột và chuyển thành ORDER_CHANGED
+        try {
+            orderRepository.flush();
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(
+                    "ORDER_CHANGED", "Đơn đã được thay đổi. Vui lòng tải lại chi tiết đơn.");
+        }
+    }
+
+    //Kiểm tra phương thức thanh toán cuar order có phải VNPAY và đã thanh toans thành công hay chuaw
+    private boolean isSuccessfulVnpayPayment(StaffOrderDetailResponse.Transaction payment) {
+        return payment != null
+                && payment.method() == PaymentMethod.VNPAY
+                && payment.status() == TransactionStatus.SUCCESS;
+    }
+
     private StaffOrderDetailResponse.Transaction findDetailTransaction(Long orderId, TransactionType type) {
         return paymentTransactionRepository.findDetailTransactions(
                         orderId, type, TransactionStatus.SUCCESS, PageRequest.ofSize(1))
@@ -106,7 +143,7 @@ public class OrderService {
         return switch (status) {
             case PENDING -> pendingActions(payment);
             case ACCEPTED -> List.of(StaffOrderAction.START_PREPARING, StaffOrderAction.REJECT_ORDER);
-            case PREPARING -> List.of(StaffOrderAction.START_DELIVERY, StaffOrderAction.CANCEL_ORDER);
+            case PREPARING -> List.of(StaffOrderAction.START_DELIVERY);
             case DELIVERING -> deliveringActions(payment);
             case DENIED, REFUND -> refund != null && refund.status() == TransactionStatus.PENDING
                     ? List.of(StaffOrderAction.REFRESH_REFUND_STATUS)
@@ -125,18 +162,23 @@ public class OrderService {
         if (payment.status() == TransactionStatus.SUCCESS) {
             return List.of(StaffOrderAction.APPROVE_ORDER, StaffOrderAction.REJECT_ORDER);
         }
+
+        if (isSuccessfulVnpayPayment(payment)) {
+            return List.of(StaffOrderAction.APPROVE_ORDER, StaffOrderAction.REJECT_ORDER);
+        }
+
         return List.of(StaffOrderAction.RECONCILE_PAYMENT, StaffOrderAction.REJECT_ORDER);
     }
 
     private List<StaffOrderAction> deliveringActions(StaffOrderDetailResponse.Transaction payment) {
         if (payment != null && payment.status() == TransactionStatus.SUCCESS) {
-            return List.of(StaffOrderAction.COMPLETE_DELIVERY, StaffOrderAction.CANCEL_ORDER);
+            return List.of(StaffOrderAction.COMPLETE_DELIVERY);
         }
         if (payment != null && payment.method() == PaymentMethod.COD
                 && payment.status() == TransactionStatus.PENDING) {
-            return List.of(StaffOrderAction.CONFIRM_COD_COLLECTION, StaffOrderAction.CANCEL_ORDER);
+            return List.of(StaffOrderAction.CONFIRM_COD_COLLECTION);
         }
-        return List.of(StaffOrderAction.CANCEL_ORDER);
+        return List.of();
     }
 
     private PageResponse<StaffOrderResponse> getStaffOrders(List<Status> statuses, String cursor, int size) {
@@ -146,8 +188,7 @@ public class OrderService {
         List<Order> batch;
 
         if (cursor == null) {
-            batch = orderRepository.findByStatusInAndDeletedFalseOrderByCreatedAtAscIdAsc(
-                    statuses, limit);
+            batch = orderRepository.findByStatusInAndDeletedFalseOrderByCreatedAtAscIdAsc(statuses, limit);
         } else {
             PageResponse.Cursor after;
             try {

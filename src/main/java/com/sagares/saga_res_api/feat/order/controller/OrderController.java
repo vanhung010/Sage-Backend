@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RequiredArgsConstructor
@@ -64,6 +65,13 @@ public class OrderController {
     public StaffOrderDetailResponse getOrderDetail(
             @PathVariable("orderId") @Positive Long orderId) {
         return orderService.getOrderDetail(orderId);
+    }
+
+    @Operation(summary = "Duyệt đơn VNPAY đã xác nhận thanh toán")
+    @PatchMapping("/{orderId}/approve")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void approveOrder(@PathVariable("orderId") @Positive Long orderId) {
+        orderService.approveOrder(orderId);
     }
 
 }
