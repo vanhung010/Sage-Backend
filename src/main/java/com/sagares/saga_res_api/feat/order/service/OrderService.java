@@ -4,6 +4,7 @@ package com.sagares.saga_res_api.feat.order.service;
 import com.sagares.saga_res_api.common.dto.PageResponse;
 import com.sagares.saga_res_api.common.exception.BusinessException;
 import com.sagares.saga_res_api.common.exception.ResourceNotFoundException;
+import com.sagares.saga_res_api.feat.notification.service.OrderNotificationService;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderAction;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderDetailResponse;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderResponse;
@@ -47,6 +48,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final OrderNotificationService orderNotificationService;
 
     @Transactional(readOnly = true)
     public PageResponse<StaffOrderResponse> getPendingOrders(String cursor, int size) {
@@ -161,6 +163,26 @@ public class OrderService {
                 .toStatus(order.getStatus())
                 .changedBy(staff)
                 .build());
+
+        //Lưu thông báo.
+        orderStatusHistoryRepository.save(OrderStatusHistory.builder()
+                .order(order)
+                .fromStatus(fromStatus)
+                .toStatus(order.getStatus())
+                .changedBy(staff)
+                .build());
+
+        //Bắn thông báo cho frontend
+        orderNotificationService.recordStatusChange(order);
+
+        eventPublisher.publishEvent(new OrderStatusChangedEvent(
+                order.getId(),
+                order.getOrderCode(),
+                order.getUser().getEmail(),
+                fromStatus,
+                order.getStatus(),
+                null));
+
 
         //Bắn email
         eventPublisher.publishEvent(new OrderStatusChangedEvent(
