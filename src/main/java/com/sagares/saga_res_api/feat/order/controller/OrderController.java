@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
+
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/orders")
@@ -70,8 +72,8 @@ public class OrderController {
     @Operation(summary = "Duyệt đơn VNPAY đã xác nhận thanh toán")
     @PatchMapping("/{orderId}/approve")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void approveOrder(@PathVariable("orderId") @Positive Long orderId) {
-        orderService.approveOrder(orderId);
+    public void approveOrder(@PathVariable("orderId") @Positive Long orderId, Principal principal) {
+        orderService.approveOrder(orderId, principal.getName());
     }
 
 }

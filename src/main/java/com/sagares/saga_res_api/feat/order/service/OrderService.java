@@ -9,15 +9,23 @@ import com.sagares.saga_res_api.feat.order.dto.StaffOrderDetailResponse;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderResponse;
 import com.sagares.saga_res_api.feat.order.entity.Order;
 import com.sagares.saga_res_api.feat.order.entity.OrderItem;
+import com.sagares.saga_res_api.feat.order.entity.OrderStatusHistory;
 import com.sagares.saga_res_api.feat.order.entity.Status;
+import com.sagares.saga_res_api.feat.order.event.OrderStatusChangedEvent;
 import com.sagares.saga_res_api.feat.order.repository.OrderRepository;
+import com.sagares.saga_res_api.feat.order.repository.OrderStatusHistoryRepository;
 import com.sagares.saga_res_api.feat.payment.dto.StaffOrderPayment;
 import com.sagares.saga_res_api.feat.payment.entity.PaymentMethod;
+import com.sagares.saga_res_api.feat.payment.entity.PaymentTransaction;
 import com.sagares.saga_res_api.feat.payment.entity.TransactionStatus;
 import com.sagares.saga_res_api.feat.payment.entity.TransactionType;
 import com.sagares.saga_res_api.feat.payment.repository.PaymentTransactionRepository;
 
+import com.sagares.saga_res_api.feat.user.entity.Role;
+import com.sagares.saga_res_api.feat.user.entity.User;
+import com.sagares.saga_res_api.feat.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -36,6 +44,9 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
+    private final UserRepository userRepository;
+    private final OrderStatusHistoryRepository orderStatusHistoryRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<StaffOrderResponse> getPendingOrders(String cursor, int size) {
@@ -96,15 +107,37 @@ public class OrderService {
 
     //Duyệt đơn VnPay PENDING -> APPROAED (sai chính tả rr)
     @Transactional
-    public void approveOrder(Long orderId) {
-        Order order = orderRepository.findByIdAndDeletedFalse(orderId).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
+    public void approveOrder(Long orderId, String staffEmail) {
 
-        if (order.getStatus() != Status.PENDING) {throw new BusinessException("ORDER_NOT_PENDING", "Đơn hàng không còn chờ duyệt");
+        User staff = userRepository.findByEmailAndDeletedFalse(staffEmail)
+                .filter(user -> user.getRole() == Role.STAFF)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "STAFF_REQUIRED",
+                        "Tài khoản staff không hợp lệ"));
+
+        //lấy đơn
+        Order order = orderRepository.findByIdAndDeletedFalse(orderId).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
+        //lấy trạng thái hiện tại và kiểm tra trạng thái
+        Status fromStatus = order.getStatus();
+        if (fromStatus != Status.PENDING) {
+            throw new BusinessException(
+                    "ORDER_NOT_PENDING", "Đơn hàng không còn chờ duyệt");
         }
 
-        StaffOrderDetailResponse.Transaction payment = findDetailTransaction(orderId, TransactionType.PAYMENT);
-        //Kiểm tra phương thức thanh toán
-        if (!isSuccessfulVnpayPayment(payment)) {
+        //lấy phương thức thanh toán
+        PaymentTransaction payment = paymentTransactionRepository.findDetailTransactions(
+                        orderId,
+                        TransactionType.PAYMENT,
+                        TransactionStatus.SUCCESS,
+                        PageRequest.ofSize(1))
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (payment == null
+                || payment.getMethod() != PaymentMethod.VNPAY
+                || payment.getStatus() != TransactionStatus.SUCCESS) {
             throw new BusinessException(
                     "ORDER_PAYMENT_NOT_CONFIRMED",
                     "Chỉ duyệt đơn VNPAY đã xác nhận thu tiền");
@@ -120,13 +153,23 @@ public class OrderService {
             throw new BusinessException(
                     "ORDER_CHANGED", "Đơn đã được thay đổi. Vui lòng tải lại chi tiết đơn.");
         }
-    }
 
-    //Kiểm tra phương thức thanh toán cuar order có phải VNPAY và đã thanh toans thành công hay chuaw
-    private boolean isSuccessfulVnpayPayment(StaffOrderDetailResponse.Transaction payment) {
-        return payment != null
-                && payment.method() == PaymentMethod.VNPAY
-                && payment.status() == TransactionStatus.SUCCESS;
+        //Lưu lịch sử chuyển đổi trạng thái
+        orderStatusHistoryRepository.save(OrderStatusHistory.builder()
+                .order(order)
+                .fromStatus(fromStatus)
+                .toStatus(order.getStatus())
+                .changedBy(staff)
+                .build());
+
+        //Bắn email
+        eventPublisher.publishEvent(new OrderStatusChangedEvent(
+                order.getId(),
+                order.getOrderCode(),
+                order.getUser().getEmail(),
+                fromStatus,
+                order.getStatus(),
+                null));
     }
 
     private StaffOrderDetailResponse.Transaction findDetailTransaction(Long orderId, TransactionType type) {
@@ -153,17 +196,16 @@ public class OrderService {
     }
 
     private List<StaffOrderAction> pendingActions(StaffOrderDetailResponse.Transaction payment) {
+        //trường hợp trạng thái thất bại chỉ cho từ chối
         if (payment == null || payment.status() == TransactionStatus.FAILED) {
             return List.of(StaffOrderAction.REJECT_ORDER);
         }
+        //trường hợp đơn thanh toán cod cho phép bắt đầu chuẩn bị và tuwf chối đơn hàng
         if (payment.method() == PaymentMethod.COD) {
             return List.of(StaffOrderAction.START_PREPARING, StaffOrderAction.REJECT_ORDER);
         }
-        if (payment.status() == TransactionStatus.SUCCESS) {
-            return List.of(StaffOrderAction.APPROVE_ORDER, StaffOrderAction.REJECT_ORDER);
-        }
-
-        if (isSuccessfulVnpayPayment(payment)) {
+        //trường hợp thanh toán thành công (VNPAY) cho phép đồng ý order và từ chối order
+        if (payment.status() == TransactionStatus.SUCCESS && payment.method() == PaymentMethod.VNPAY) {
             return List.of(StaffOrderAction.APPROVE_ORDER, StaffOrderAction.REJECT_ORDER);
         }
 
