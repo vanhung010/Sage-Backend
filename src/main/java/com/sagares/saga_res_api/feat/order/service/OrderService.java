@@ -11,6 +11,7 @@ import com.sagares.saga_res_api.feat.order.entity.Order;
 import com.sagares.saga_res_api.feat.order.entity.OrderItem;
 import com.sagares.saga_res_api.feat.order.entity.OrderStatusHistory;
 import com.sagares.saga_res_api.feat.order.entity.Status;
+import com.sagares.saga_res_api.feat.order.event.OrderStatusChangedEvent;
 import com.sagares.saga_res_api.feat.order.repository.OrderRepository;
 import com.sagares.saga_res_api.feat.order.repository.OrderStatusHistoryRepository;
 import com.sagares.saga_res_api.feat.payment.dto.StaffOrderPayment;
@@ -24,6 +25,7 @@ import com.sagares.saga_res_api.feat.user.entity.Role;
 import com.sagares.saga_res_api.feat.user.entity.User;
 import com.sagares.saga_res_api.feat.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -44,6 +46,7 @@ public class OrderService {
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final UserRepository userRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<StaffOrderResponse> getPendingOrders(String cursor, int size) {
@@ -158,6 +161,15 @@ public class OrderService {
                 .toStatus(order.getStatus())
                 .changedBy(staff)
                 .build());
+
+        //Bắn email
+        eventPublisher.publishEvent(new OrderStatusChangedEvent(
+                order.getId(),
+                order.getOrderCode(),
+                order.getUser().getEmail(),
+                fromStatus,
+                order.getStatus(),
+                null));
     }
 
     private StaffOrderDetailResponse.Transaction findDetailTransaction(Long orderId, TransactionType type) {
