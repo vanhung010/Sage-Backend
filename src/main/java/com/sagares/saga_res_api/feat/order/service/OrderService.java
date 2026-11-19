@@ -4,6 +4,7 @@ package com.sagares.saga_res_api.feat.order.service;
 import com.sagares.saga_res_api.common.dto.PageResponse;
 import com.sagares.saga_res_api.common.exception.BusinessException;
 import com.sagares.saga_res_api.common.exception.ResourceNotFoundException;
+import com.sagares.saga_res_api.feat.notification.service.OrderNotificationService;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderAction;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderDetailResponse;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderResponse;
@@ -33,9 +34,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @RequiredArgsConstructor
@@ -47,6 +45,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final OrderNotificationService orderNotificationService;
 
     @Transactional(readOnly = true)
     public PageResponse<StaffOrderResponse> getPendingOrders(String cursor, int size) {
@@ -85,8 +84,8 @@ public class OrderService {
                         item.getSubTotal()))
                 .toList();
 
-        StaffOrderDetailResponse.Transaction payment = findDetailTransaction(orderId, TransactionType.PAYMENT);
-        StaffOrderDetailResponse.Transaction refund = findDetailTransaction(orderId, TransactionType.REFUND);
+        StaffOrderDetailResponse.TransactionOrder payment = findDetailTransaction(orderId, TransactionType.PAYMENT);
+        StaffOrderDetailResponse.TransactionOrder refund = findDetailTransaction(orderId, TransactionType.REFUND);
 
         return new StaffOrderDetailResponse(
                 order.getId(),
@@ -108,81 +107,130 @@ public class OrderService {
     //Duyệt đơn VnPay PENDING -> APPROAED (sai chính tả rr)
     @Transactional
     public void approveOrder(Long orderId, String staffEmail) {
+        User staff =  requireStaff(staffEmail);
 
-        User staff = userRepository.findByEmailAndDeletedFalse(staffEmail)
+        //lấy đơn
+        Order order = requireOrder(orderId);
+
+        if (order.getStatus() != Status.PENDING) {
+            throw new BusinessException(
+                    "ORDER_NOT_PENDING",
+                    "Đơn hàng không còn chờ duyệt");
+        }
+
+        var payment = findDetailTransaction(orderId, TransactionType.PAYMENT);
+
+        if (!isPaidVnpay(payment)) {
+            throw new BusinessException(
+                    "ORDER_PAYMENT_NOT_CONFIRMED",
+                    "Chỉ duyệt đơn VNPAY đã xác nhận thu tiền");
+        }
+
+        changeStatus(order, Status.ACCEPTED, staff);
+    }
+
+    //Bắt đầu chuẩn bị món ăn ACCCEPT -> PREPAIR (VnPay) và PENDING -> PREPAIR
+    @Transactional
+    public void startPreparing(Long orderId, Status expectedStatus, String staffEmail) {
+        //Lấy và kiểm tra phải staff không
+        User staff = requireStaff(staffEmail);
+        //Lấy order
+        Order order = requireOrder(orderId);
+
+        if (order.getStatus() != expectedStatus) {
+            throw new BusinessException("ORDER_CHANGED",
+                    "Đơn không còn ở trạng thái " + expectedStatus
+                            + ". Vui lòng tải lại chi tiết đơn.");
+        }
+
+        var payment = findDetailTransaction(orderId, TransactionType.PAYMENT);
+
+        if (!canStartPreparing(expectedStatus, payment)) {
+            throw new BusinessException("ORDER_PAYMENT_NOT_ELIGIBLE",
+                    "Giao dịch thanh toán của đơn không đủ điều kiện để bắt đầu chuẩn bị.");
+        }
+
+        changeStatus(order, Status.PREPARING, staff);
+    }
+
+
+    private User requireStaff(String email) {
+        return userRepository.findByEmailAndDeletedFalse(email)
                 .filter(user -> user.getRole() == Role.STAFF)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.FORBIDDEN,
                         "STAFF_REQUIRED",
                         "Tài khoản staff không hợp lệ"));
+    }
 
-        //lấy đơn
-        Order order = orderRepository.findByIdAndDeletedFalse(orderId).orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
-        //lấy trạng thái hiện tại và kiểm tra trạng thái
+    private Order requireOrder(Long orderId) {
+        return orderRepository.findByIdAndDeletedFalse(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy đơn hàng"));
+    }
+
+
+
+    private boolean canStartPreparing(Status status,
+                                      StaffOrderDetailResponse.TransactionOrder payment) {
+        return switch (status) {
+            case ACCEPTED -> isPaidVnpay(payment);
+            case PENDING -> payment != null
+                    && payment.method() == PaymentMethod.COD
+                    && (payment.status() == TransactionStatus.PENDING
+                    || payment.status() == TransactionStatus.SUCCESS);
+            default -> false;
+        };
+    }
+    //Kiểm tra TransactionOrder có phải VnPay và đã thanh toán không
+    private boolean isPaidVnpay(StaffOrderDetailResponse.TransactionOrder payment) {
+        return payment != null
+                && payment.method() == PaymentMethod.VNPAY
+                && payment.status() == TransactionStatus.SUCCESS;
+    }
+
+    private void changeStatus(Order order, Status toStatus, User staff) {
+        //Trạng thái đầu
         Status fromStatus = order.getStatus();
-        if (fromStatus != Status.PENDING) {
-            throw new BusinessException(
-                    "ORDER_NOT_PENDING", "Đơn hàng không còn chờ duyệt");
-        }
-
-        //lấy phương thức thanh toán
-        PaymentTransaction payment = paymentTransactionRepository.findDetailTransactions(
-                        orderId,
-                        TransactionType.PAYMENT,
-                        TransactionStatus.SUCCESS,
-                        PageRequest.ofSize(1))
-                .stream()
-                .findFirst()
-                .orElse(null);
-
-        if (payment == null
-                || payment.getMethod() != PaymentMethod.VNPAY
-                || payment.getStatus() != TransactionStatus.SUCCESS) {
-            throw new BusinessException(
-                    "ORDER_PAYMENT_NOT_CONFIRMED",
-                    "Chỉ duyệt đơn VNPAY đã xác nhận thu tiền");
-        }
-        //Set trạng thái của đơn đặt món sang đã duyệt
-        order.setStatus(Status.ACCEPTED);
-
-        //orderRepository.flush() yêu cầu Hibernate gửi các thay đổi đang chờ xuống database ngay lúc gọi.
-        //Trong đoạn duyệt đơn, mục đích là để câu UPDATE chạy bên trong khối try, nơi service có thể bắt lỗi xung đột và chuyển thành ORDER_CHANGED
+        //Đổi trạng thái
+        order.setStatus(toStatus);
+        //Ép lưu trạng thaái, nếu có lỗi thì bắn ra ở đây.
         try {
             orderRepository.flush();
         } catch (OptimisticLockingFailureException ex) {
-            throw new BusinessException(
-                    "ORDER_CHANGED", "Đơn đã được thay đổi. Vui lòng tải lại chi tiết đơn.");
+            throw new BusinessException("ORDER_CHANGED",
+                    "Đơn đã được thay đổi. Vui lòng tải lại chi tiết đơn.");
         }
-
-        //Lưu lịch sử chuyển đổi trạng thái
+        //Lưu lịch sử thay đổi trạng thái
         orderStatusHistoryRepository.save(OrderStatusHistory.builder()
                 .order(order)
                 .fromStatus(fromStatus)
-                .toStatus(order.getStatus())
+                .toStatus(toStatus)
                 .changedBy(staff)
                 .build());
-
-        //Bắn email
+        //Vừa lưu vừa bắn thoong báo mới cho user biết
+        orderNotificationService.recordStatusChange(order);
+        //Bắn thông báo thay đổi trạng thái cho nhan viên cập nhật giao diện
         eventPublisher.publishEvent(new OrderStatusChangedEvent(
                 order.getId(),
                 order.getOrderCode(),
                 order.getUser().getEmail(),
                 fromStatus,
-                order.getStatus(),
+                toStatus,
                 null));
     }
 
-    private StaffOrderDetailResponse.Transaction findDetailTransaction(Long orderId, TransactionType type) {
-        return paymentTransactionRepository.findDetailTransactions(
-                        orderId, type, TransactionStatus.SUCCESS, PageRequest.ofSize(1))
+
+
+    private StaffOrderDetailResponse.TransactionOrder findDetailTransaction(Long orderId, TransactionType type) {
+        return paymentTransactionRepository.findDetailTransactions(orderId, type, TransactionStatus.SUCCESS, PageRequest.ofSize(1))
                 .stream()
                 .findFirst()
-                .map(StaffOrderDetailResponse.Transaction::from)
+                .map(StaffOrderDetailResponse.TransactionOrder::from)
                 .orElse(null);
     }
 
-    private List<StaffOrderAction> allowedActions(
-            Status status, StaffOrderDetailResponse.Transaction payment, StaffOrderDetailResponse.Transaction refund) {
+    private List<StaffOrderAction> allowedActions(Status status, StaffOrderDetailResponse.TransactionOrder payment, StaffOrderDetailResponse.TransactionOrder refund) {
         return switch (status) {
             case PENDING -> pendingActions(payment);
             case ACCEPTED -> List.of(StaffOrderAction.START_PREPARING, StaffOrderAction.REJECT_ORDER);
@@ -195,7 +243,7 @@ public class OrderService {
         };
     }
 
-    private List<StaffOrderAction> pendingActions(StaffOrderDetailResponse.Transaction payment) {
+    private List<StaffOrderAction> pendingActions(StaffOrderDetailResponse.TransactionOrder payment) {
         //trường hợp trạng thái thất bại chỉ cho từ chối
         if (payment == null || payment.status() == TransactionStatus.FAILED) {
             return List.of(StaffOrderAction.REJECT_ORDER);
@@ -212,7 +260,7 @@ public class OrderService {
         return List.of(StaffOrderAction.RECONCILE_PAYMENT, StaffOrderAction.REJECT_ORDER);
     }
 
-    private List<StaffOrderAction> deliveringActions(StaffOrderDetailResponse.Transaction payment) {
+    private List<StaffOrderAction> deliveringActions(StaffOrderDetailResponse.TransactionOrder payment) {
         if (payment != null && payment.status() == TransactionStatus.SUCCESS) {
             return List.of(StaffOrderAction.COMPLETE_DELIVERY);
         }

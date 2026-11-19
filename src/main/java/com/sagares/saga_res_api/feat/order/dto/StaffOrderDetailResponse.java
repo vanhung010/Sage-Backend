@@ -17,8 +17,8 @@ public record StaffOrderDetailResponse(
         String reason,
         Delivery delivery,
         List<Item> items,
-        Transaction payment,
-        Transaction refund,
+        TransactionOrder payment,
+        TransactionOrder refund,
         List<StaffOrderAction> allowedActions
 ) {
     public record Delivery(
@@ -37,7 +37,7 @@ public record StaffOrderDetailResponse(
             BigDecimal subTotal
     ) {}
 
-    public record Transaction(
+    public record TransactionOrder(
             PaymentMethod method,
             TransactionStatus status,
             BigDecimal amount,
@@ -45,8 +45,8 @@ public record StaffOrderDetailResponse(
             String providerTransactionId,
             LocalDateTime confirmedAt
     ) {
-        public static Transaction from(PaymentTransaction transaction) {
-            return new Transaction(
+        public static TransactionOrder from(PaymentTransaction transaction) {
+            return new TransactionOrder(
                     transaction.getMethod(),
                     transaction.getStatus(),
                     transaction.getAmount(),

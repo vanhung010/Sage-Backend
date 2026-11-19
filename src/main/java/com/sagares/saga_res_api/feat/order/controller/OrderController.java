@@ -3,6 +3,7 @@ package com.sagares.saga_res_api.feat.order.controller;
 import com.sagares.saga_res_api.common.dto.PageResponse;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderDetailResponse;
 import com.sagares.saga_res_api.feat.order.dto.StaffOrderResponse;
+import com.sagares.saga_res_api.feat.order.entity.Status;
 import com.sagares.saga_res_api.feat.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.constraints.Max;
@@ -74,6 +75,22 @@ public class OrderController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void approveOrder(@PathVariable("orderId") @Positive Long orderId, Principal principal) {
         orderService.approveOrder(orderId, principal.getName());
+    }
+
+    @Operation(summary = "Bắt đầu chuẩn bị đơn VNPAY đã duyệt")
+    @PatchMapping("/{orderId}/prepare-accepted")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void prepareAccepted(@PathVariable("orderId") @Positive Long orderId,
+                                Principal principal) {
+        orderService.startPreparing(orderId, Status.ACCEPTED, principal.getName());
+    }
+
+    @Operation(summary = "Nhận chuẩn bị đơn COD đang chờ duyệt")
+    @PatchMapping("/{orderId}/prepare-pending")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void preparePending(@PathVariable("orderId") @Positive Long orderId,
+                               Principal principal) {
+        orderService.startPreparing(orderId, Status.PENDING, principal.getName());
     }
 
 }
